@@ -1,45 +1,47 @@
 """
 JARVIS v2.0 - Iron Man AI Assistant
 =====================================
-Fixes:
-- Only YOUR voice listened (high threshold)
-- Jarvis speaks every single response
-- Jarvis won't hear itself talking
+- Wake word: "Jarvis"
+- AI Brain: Ollama (llama3.2) - 100% Free
+- PC Control: Jarvis API
+- Voice: Windows PowerShell TTS (reliable)
 """
 
 import time
 import datetime
 import webbrowser
 import sys
+import subprocess
 import requests
 import speech_recognition as sr
-import pyttsx3
 
 # ── Config ────────────────────────────────────────────────────────────────────
 MIC_INDEX        = 1
 API_BASE         = "http://127.0.0.1:8000"
 OLLAMA_URL       = "http://localhost:11434/api/generate"
 AI_MODEL         = "llama3.2"
-ENERGY_THRESHOLD = 2500   # HIGH = only YOUR voice, ignores background noise
+ENERGY_THRESHOLD = 2500
 
-# ── Voice Engine ──────────────────────────────────────────────────────────────
-engine = pyttsx3.init()
-engine.setProperty("rate", 165)
-engine.setProperty("volume", 1.0)
-for v in engine.getProperty("voices"):
-    if any(n in v.name.lower() for n in ["david", "mark", "george"]):
-        engine.setProperty("voice", v.id)
-        break
-
+# ── Speak (Windows PowerShell TTS) ───────────────────────────────────────────
 jarvis_speaking = False
 
 def speak(text: str):
     global jarvis_speaking
     jarvis_speaking = True
     print(f"JARVIS: {text}")
-    engine.say(text)
-    engine.runAndWait()
-    time.sleep(0.3)
+    # Clean text for PowerShell
+    clean = text.replace("'", "").replace('"', "").replace("%", "percent")
+    cmd = (
+        f"Add-Type -AssemblyName System.Speech; "
+        f"$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+        f"$s.Rate = 1; "
+        f"$s.Speak('{clean}')"
+    )
+    subprocess.run(
+        ["powershell", "-Command", cmd],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
     jarvis_speaking = False
 
 # ── Listen ────────────────────────────────────────────────────────────────────
@@ -50,7 +52,7 @@ def check_mic():
     except Exception:
         return False
 
-def listen(timeout=10, phrase_limit=10):
+def listen(timeout=15, phrase_limit=10):
     while jarvis_speaking:
         time.sleep(0.1)
 
@@ -75,7 +77,7 @@ def listen(timeout=10, phrase_limit=10):
         print(f"Mic error: {e}")
         return None
 
-# ── API ───────────────────────────────────────────────────────────────────────
+# ── Jarvis API ────────────────────────────────────────────────────────────────
 def api(method, path, data=None):
     try:
         url = f"{API_BASE}{path}"
@@ -84,10 +86,10 @@ def api(method, path, data=None):
     except:
         return {"error": "API offline"}
 
-# ── Ollama AI ─────────────────────────────────────────────────────────────────
+# ── Ollama AI Brain ───────────────────────────────────────────────────────────
 PERSONALITY = """You are JARVIS, Tony Stark's AI assistant.
 Be witty, helpful, slightly formal. Call user 'boss'.
-Keep replies short - 1-2 sentences only.
+Keep replies short - 1 to 2 sentences only.
 Never break character."""
 
 def ask_ai(question):
@@ -106,20 +108,20 @@ def ask_ai(question):
     except:
         return "AI error boss. Try again."
 
-# ── Greet ─────────────────────────────────────────────────────────────────────
+# ── Greeting ──────────────────────────────────────────────────────────────────
 def greet():
     hour = datetime.datetime.now().hour
     g = "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
     speak(f"{g} boss! JARVIS v2.0 online and ready.")
 
 def show_tasks():
-    tasks = ["Check emails", "Review today's schedule", "Stay awesome boss"]
+    tasks = ["Check emails", "Review today schedule", "Stay awesome boss"]
     print("\n Today's Tasks:")
     for i, t in enumerate(tasks, 1):
         print(f"  {i}. {t}")
     print()
 
-# ── Sites & Apps ──────────────────────────────────────────────────────────────
+# ── Sites and Apps ────────────────────────────────────────────────────────────
 SITES = {
     "youtube":   "https://youtube.com",
     "google":    "https://google.com",
@@ -167,7 +169,7 @@ def think(user_input):
     if any(w in t for w in ["system", "cpu", "ram", "performance"]):
         res = api("GET", "/system/info")
         if "error" not in res:
-            return f"CPU at {res['cpu_percent']}%, RAM at {res['ram']['percent']}% boss."
+            return f"CPU at {res['cpu_percent']} percent, RAM at {res['ram']['percent']} percent boss."
         return "Jarvis API is offline boss."
 
     if any(w in t for w in ["open", "launch", "go to"]):
@@ -191,11 +193,13 @@ def think(user_input):
         return "Screenshot taken boss."
 
     if "volume up" in t or "louder" in t:
-        for _ in range(5): api("POST", "/keyboard/press", {"key": "volumeup"})
+        for _ in range(5):
+            api("POST", "/keyboard/press", {"key": "volumeup"})
         return "Volume up boss."
 
     if "volume down" in t or "quieter" in t:
-        for _ in range(5): api("POST", "/keyboard/press", {"key": "volumedown"})
+        for _ in range(5):
+            api("POST", "/keyboard/press", {"key": "volumedown"})
         return "Volume down boss."
 
     if "mute" in t:
@@ -217,14 +221,13 @@ def think(user_input):
     if any(w in t for w in ["bye", "stop", "exit", "goodbye"]):
         return "SHUTDOWN"
 
-    # AI Brain
     return ask_ai(user_input)
 
 # ── Voice Mode ────────────────────────────────────────────────────────────────
 def voice_mode():
     speak("Voice mode active. Say Jarvis to wake me up boss.")
     print(f"\n Listening only for YOUR voice (threshold: {ENERGY_THRESHOLD})")
-    print("Say 'Jarvis' then your command\n")
+    print(" Say 'Jarvis' then your command\n")
 
     while True:
         print("[Waiting for 'Jarvis'...]")
