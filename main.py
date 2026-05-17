@@ -1,10 +1,12 @@
 """
-JARVIS v2.0 - Iron Man AI Assistant
+JARVIS v3.0 - Iron Man AI Assistant
 =====================================
 - Wake word: "Jarvis"
-- AI Brain: Ollama (llama3.2) - 100% Free
+- AI Brain: Groq (llama3) - Super Fast & Free
+- Personality: Bujji style (Kalki movie)
+- Languages: Telugu, Hindi, English
 - PC Control: Jarvis API
-- Voice: Windows PowerShell TTS (reliable)
+- Voice: Windows PowerShell TTS
 """
 
 import time
@@ -14,22 +16,26 @@ import sys
 import subprocess
 import requests
 import speech_recognition as sr
+import os
+from dotenv import load_dotenv
+
+# ── Load API Key ──────────────────────────────────────────────────────────────
+load_dotenv("jar.env")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 MIC_INDEX        = 1
 API_BASE         = "http://127.0.0.1:8000"
-OLLAMA_URL       = "http://localhost:11434/api/generate"
-AI_MODEL         = "llama3.2"
+GROQ_URL         = "https://api.groq.com/openai/v1/chat/completions"
 ENERGY_THRESHOLD = 2500
 
-# ── Speak (Windows PowerShell TTS) ───────────────────────────────────────────
+# ── Speak ─────────────────────────────────────────────────────────────────────
 jarvis_speaking = False
 
 def speak(text: str):
     global jarvis_speaking
     jarvis_speaking = True
     print(f"JARVIS: {text}")
-    # Clean text for PowerShell
     clean = text.replace("'", "").replace('"', "").replace("%", "percent")
     cmd = (
         f"Add-Type -AssemblyName System.Speech; "
@@ -59,16 +65,26 @@ def listen(timeout=15, phrase_limit=10):
     recognizer = sr.Recognizer()
     recognizer.energy_threshold = ENERGY_THRESHOLD
     recognizer.dynamic_energy_threshold = False
-    recognizer.pause_threshold = 0.6
+    recognizer.pause_threshold = 0.5
 
     try:
         mic = sr.Microphone(device_index=MIC_INDEX)
         with mic as source:
             print("JARVIS: Listening...")
             audio = recognizer.listen(source, timeout=timeout, phrase_time_limit=phrase_limit)
-        text = recognizer.recognize_google(audio, language="en-IN")
-        print(f"You said: {text}")
-        return text.lower()
+
+        # Try multiple languages
+        text = None
+        for lang in ["en-IN", "te-IN", "hi-IN", "en-US"]:
+            try:
+                text = recognizer.recognize_google(audio, language=lang)
+                print(f"You said ({lang}): {text}")
+                break
+            except:
+                continue
+
+        return text.lower() if text else None
+
     except sr.WaitTimeoutError:
         return None
     except sr.UnknownValueError:
@@ -86,33 +102,56 @@ def api(method, path, data=None):
     except:
         return {"error": "API offline"}
 
-# ── Ollama AI Brain ───────────────────────────────────────────────────────────
-PERSONALITY = """You are JARVIS, Tony Stark's AI assistant.
-Be witty, helpful, slightly formal. Call user 'boss'.
-Keep replies short - 1 to 2 sentences only.
-Never break character."""
+# ── Groq AI Brain ─────────────────────────────────────────────────────────────
+PERSONALITY = """You are JARVIS — but with the personality of Bujji from Kalki 2898 AD movie.
+You are Tony Stark's loyal, witty, caring AI assistant.
+- Be friendly, warm, slightly funny
+- Call user 'boss' always
+- Mix Telugu and English naturally (Tenglish) when appropriate
+- Keep replies short — 1 to 2 sentences max
+- Be proactive and caring like Bujji
+- Never break character
+- You know everything — science, tech, movies, cricket, politics, anything"""
 
-def ask_ai(question):
+def ask_ai(question: str) -> str:
+    if not GROQ_API_KEY:
+        return "Groq API key not found boss. Please check your .env file."
     try:
-        res = requests.post(OLLAMA_URL, json={
-            "model": AI_MODEL,
-            "prompt": f"{PERSONALITY}\n\nUser: {question}\nJARVIS:",
-            "stream": False,
-            "options": {"temperature": 0.7, "num_predict": 80},
-        }, timeout=30)
+        res = requests.post(
+            GROQ_URL,
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "llama3-groq-70b-8192-tool-use-preview",
+                "messages": [
+                    {"role": "system", "content": PERSONALITY},
+                    {"role": "user", "content": question}
+                ],
+                "max_tokens": 100,
+                "temperature": 0.8,
+            },
+            timeout=15
+        )
         if res.status_code == 200:
-            return res.json().get("response", "").strip()
+            return res.json()["choices"][0]["message"]["content"].strip()
         return "Having trouble thinking right now boss."
     except requests.exceptions.ConnectionError:
-        return "Ollama is offline boss. Please start the Ollama app."
-    except:
-        return "AI error boss. Try again."
+        return "Internet connection issue boss. Check your network."
+    except Exception as e:
+        return f"AI error boss. Try again."
 
 # ── Greeting ──────────────────────────────────────────────────────────────────
 def greet():
     hour = datetime.datetime.now().hour
-    g = "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
-    speak(f"{g} boss! JARVIS v2.0 online and ready.")
+    if hour < 12:
+        g = "Good morning"
+    elif hour < 18:
+        g = "Good afternoon"
+    else:
+        g = "Good evening"
+    speak(f"{g} boss! JARVIS v3.0 online. Ready to serve you!")
 
 def show_tasks():
     tasks = ["Check emails", "Review today schedule", "Stay awesome boss"]
@@ -134,6 +173,12 @@ SITES = {
     "naukri":    "https://naukri.com",
     "linkedin":  "https://linkedin.com",
     "spotify":   "https://open.spotify.com",
+    "reddit":    "https://reddit.com",
+    "facebook":  "https://facebook.com",
+    "amazon":    "https://amazon.in",
+    "flipkart":  "https://flipkart.com",
+    "hotstar":   "https://hotstar.com",
+    "maps":      "https://maps.google.com",
 }
 
 APPS = {
@@ -142,37 +187,45 @@ APPS = {
     "explorer":     "explorer",
     "paint":        "paint",
     "cmd":          "cmd",
+    "terminal":     "cmd",
     "chrome":       "chrome",
     "firefox":      "firefox",
     "vs code":      "vscode",
     "task manager": "task manager",
     "word":         "word",
     "excel":        "excel",
+    "powerpoint":   "powerpnt",
 }
 
-# ── Think ─────────────────────────────────────────────────────────────────────
+# ── Think (Command Handler) ───────────────────────────────────────────────────
 def think(user_input):
     t = user_input.lower().strip()
 
-    if any(w in t for w in ["time", "what time"]):
+    # Time
+    if any(w in t for w in ["time", "what time", "samayam"]):
         return f"Current time is {datetime.datetime.now().strftime('%I:%M %p')} boss."
 
-    if any(w in t for w in ["date", "today"]):
+    # Date
+    if any(w in t for w in ["date", "today", "enu", "roju"]):
         return f"Today is {datetime.datetime.now().strftime('%A, %B %d, %Y')} boss."
 
-    if any(w in t for w in ["hello", "hi", "how are you"]):
-        return "Fully operational boss! Ready to assist."
+    # Greetings
+    if any(w in t for w in ["hello", "hi", "hey", "how are you", "ela unnav", "enti vishesham"]):
+        return "Fully operational boss! Mee seva lo unna. Ready to assist!"
 
-    if any(w in t for w in ["thanks", "thank you"]):
-        return "Always here for you boss!"
+    # Thanks
+    if any(w in t for w in ["thanks", "thank you", "thanks bro", "thank you boss"]):
+        return "Always here for you boss! Anytime!"
 
-    if any(w in t for w in ["system", "cpu", "ram", "performance"]):
+    # System Info
+    if any(w in t for w in ["system", "cpu", "ram", "performance", "battery"]):
         res = api("GET", "/system/info")
         if "error" not in res:
             return f"CPU at {res['cpu_percent']} percent, RAM at {res['ram']['percent']} percent boss."
-        return "Jarvis API is offline boss."
+        return "Jarvis API is offline boss. Start run.py first."
 
-    if any(w in t for w in ["open", "launch", "go to"]):
+    # Open websites — INSTANT, no delay
+    if any(w in t for w in ["open", "launch", "go to", "show", "teruvu", "chupinchu"]):
         for site, url in SITES.items():
             if site in t:
                 webbrowser.open(url)
@@ -181,23 +234,28 @@ def think(user_input):
             if app in t:
                 api("POST", "/apps/open", {"name": name})
                 return f"Opening {app} boss."
-        return "Which app or site boss?"
+        return "Which app or website boss?"
 
-    if t.startswith("search "):
-        query = t.replace("search ", "")
+    # Search
+    if any(w in t for w in ["search", "find", "look up", "search for"]):
+        query = t
+        for w in ["search for", "search", "find", "look up"]:
+            query = query.replace(w, "").strip()
         webbrowser.open(f"https://www.google.com/search?q={query}")
         return f"Searching for {query} boss."
 
-    if "screenshot" in t:
+    # Screenshot
+    if any(w in t for w in ["screenshot", "capture", "screen shot"]):
         api("POST", "/keyboard/screenshot")
         return "Screenshot taken boss."
 
-    if "volume up" in t or "louder" in t:
+    # Volume
+    if any(w in t for w in ["volume up", "louder", "increase volume"]):
         for _ in range(5):
             api("POST", "/keyboard/press", {"key": "volumeup"})
         return "Volume up boss."
 
-    if "volume down" in t or "quieter" in t:
+    if any(w in t for w in ["volume down", "quieter", "decrease volume"]):
         for _ in range(5):
             api("POST", "/keyboard/press", {"key": "volumedown"})
         return "Volume down boss."
@@ -206,27 +264,37 @@ def think(user_input):
         api("POST", "/keyboard/press", {"key": "volumemute"})
         return "Muted boss."
 
+    # Lock
     if "lock" in t:
         api("POST", "/system/lock")
         return "Screen locked boss."
 
-    if "shutdown" in t or "power off" in t:
+    # Sleep
+    if "sleep" in t:
+        api("POST", "/system/sleep")
+        return "Going to sleep boss. Good night!"
+
+    # Shutdown
+    if any(w in t for w in ["shutdown", "power off", "turn off", "band cheyyi"]):
         api("POST", "/system/shutdown")
         return "SHUTDOWN"
 
-    if "restart" in t or "reboot" in t:
+    # Restart
+    if any(w in t for w in ["restart", "reboot"]):
         api("POST", "/system/restart")
         return "Restarting boss."
 
-    if any(w in t for w in ["bye", "stop", "exit", "goodbye"]):
+    # Exit Jarvis
+    if any(w in t for w in ["bye", "goodbye", "exit jarvis", "stop jarvis", "povu"]):
         return "SHUTDOWN"
 
+    # Everything else — Groq AI
     return ask_ai(user_input)
 
 # ── Voice Mode ────────────────────────────────────────────────────────────────
 def voice_mode():
-    speak("Voice mode active. Say Jarvis to wake me up boss.")
-    print(f"\n Listening only for YOUR voice (threshold: {ENERGY_THRESHOLD})")
+    speak("Voice mode active boss. Say Jarvis anytime to wake me up!")
+    print(f"\n Listening for YOUR voice only (threshold: {ENERGY_THRESHOLD})")
     print(" Say 'Jarvis' then your command\n")
 
     while True:
@@ -242,13 +310,13 @@ def voice_mode():
 
         command = listen(timeout=10, phrase_limit=12)
         if command is None:
-            speak("Didn't catch that boss. Try again.")
+            speak("Didn't catch that boss. Try again!")
             continue
 
         response = think(command)
 
         if response == "SHUTDOWN":
-            speak("Shutting down. Goodbye boss!")
+            speak("Shutting down. Goodbye boss! Take care!")
             sys.exit(0)
 
         speak(response)
@@ -275,7 +343,8 @@ def type_mode():
 # ── Main ──────────────────────────────────────────────────────────────────────
 def run_jarvis():
     print("=" * 45)
-    print("       J.A.R.V.I.S — ONLINE v2.0")
+    print("       J.A.R.V.I.S — ONLINE v3.0")
+    print("         Powered by Groq AI")
     print("=" * 45)
 
     greet()
@@ -288,11 +357,10 @@ def run_jarvis():
     except:
         print("⚠️  Jarvis API offline — start run.py")
 
-    try:
-        requests.get("http://localhost:11434", timeout=2)
-        print("✅ Ollama AI connected")
-    except:
-        print("⚠️  Ollama offline — start Ollama app")
+    if GROQ_API_KEY:
+        print("✅ Groq AI connected")
+    else:
+        print("⚠️  Groq API key missing — check .env file")
 
     print()
 
